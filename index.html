@@ -468,6 +468,9 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .sync-dot.syncing{background:#f59e0b;animation:pulse .8s infinite;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 </style>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -1356,8 +1359,7 @@ async function renderWeekReview() {
   try {
     const weekDesc = week.map(h =>
       `${h.displayDate||h.date}：完成${h.doneCount}件(${(h.done||[]).map(t=>t.name).join('、')||'无'})，跳过${(h.skip||[]).length}件(${(h.skip||[]).map(t=>t.name).join('、')||'无'})，专注${h.totalMin||0}分钟`
-    ).join('
-');
+    ).join('\n');
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -1715,10 +1717,7 @@ renderDailyQuote();
 </div>
 
 
-<!-- Firebase compat SDKs (global scope, no module needed) -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
 <script>
 // ══════════════════════════════════════════
 // ── FIREBASE + GOOGLE AUTH + FIRESTORE ──
