@@ -1713,17 +1713,16 @@ renderDailyQuote();
     <div class="auth-note">登录后数据自动同步到云端<br>换电脑换浏览器都能找回</div>
   </div>
 </div>
-<script type="module">
 
-// ══════════════════════════════════════════
-// ── FIREBASE + GOOGLE AUTH + FIRESTORE SYNC ──
-// ══════════════════════════════════════════
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, onSnapshot }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
+<!-- Firebase compat SDKs (global scope, no module needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+// ══════════════════════════════════════════
+// ── FIREBASE + GOOGLE AUTH + FIRESTORE ──
+// ══════════════════════════════════════════
 const firebaseConfig = {
   apiKey: "AIzaSyCye8bzR7HM3quaxoBSH6gkIckxs68oEKM",
   authDomain: "meridian-app-6625c.firebaseapp.com",
@@ -1733,111 +1732,28 @@ const firebaseConfig = {
   appId: "1:603934160771:web:00b30f35ad8c252bc4e8b6"
 };
 
-const fbApp  = initializeApp(firebaseConfig);
-const auth   = getAuth(fbApp);
-const db     = getFirestore(fbApp);
-let currentUid = null;
-let syncTimeout = null;
-let unsubSnapshot = null;
+firebase.initializeApp(firebaseConfig);
+const fbAuth = firebase.auth();
+const fbDb   = firebase.firestore();
 
-// ── Sign in ──
-async function signInWithGoogle() {
-  try {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-  } catch(e) {
-    console.error('Sign in failed', e);
-    alert('登录失败，请重试。');
-  }
+let currentUid   = null;
+let syncTimeout  = null;
+let unsubSnap    = null;
+
+// ── Google sign in ──
+function signInWithGoogle() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  fbAuth.signInWithPopup(provider).catch(e => {
+    console.error('Sign in error', e);
+    alert('登录失败：' + e.message);
+  });
 }
 
 // ── Sign out ──
-async function signOutUser() {
+function signOutUser() {
   if (!confirm('确定退出登录？')) return;
-  if (unsubSnapshot) { unsubSnapshot(); unsubSnapshot = null; }
-  await signOut(auth);
-}
-
-// ── Auth state listener ──
-onAuthStateChanged(auth, async user => {
-  if (user) {
-    currentUid = user.uid;
-    // Show user in nav
-    document.getElementById('authOverlay').classList.remove('on');
-    document.getElementById('userBar').style.display = 'flex';
-    document.getElementById('userAvatar').src = user.photoURL || '';
-    document.getElementById('userName').textContent = user.displayName?.split(' ')[0] || user.email;
-
-    // Load data from Firestore (overrides localStorage if cloud data exists)
-    await loadFromCloud();
-
-    // Start real-time listener
-    startCloudListener();
-  } else {
-    currentUid = null;
-    if (unsubSnapshot) { unsubSnapshot(); unsubSnapshot = null; }
-    document.getElementById('authOverlay').classList.add('on');
-    document.getElementById('userBar').style.display = 'none';
-    setSyncStatus('idle');
-  }
-});
-
-// ── Load data from Firestore ──
-async function loadFromCloud() {
-  if (!currentUid) return;
-  setSyncStatus('syncing');
-  try {
-    const snap = await getDoc(doc(db, 'users', currentUid, 'data', 'main'));
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data.tasks)   { tasks = data.tasks; tasks.forEach(t=>{if(!t.subtasks)t.subtasks=[];if(!t.status)t.status='pending';}); nextId = Math.max(...tasks.map(t=>t.id),0)+1; save('m3_tasks',tasks); }
-      if (data.history) { save('m3_history', data.history); }
-    }
-    setSyncStatus('synced');
-    renderListAll();
-    renderDailyQuote();
-  } catch(e) {
-    console.error('Load from cloud failed', e);
-    setSyncStatus('idle');
-  }
-}
-
-// ── Real-time listener (updates if data changes from another device) ──
-function startCloudListener() {
-  if (!currentUid) return;
-  if (unsubSnapshot) unsubSnapshot();
-  unsubSnapshot = onSnapshot(doc(db, 'users', currentUid, 'data', 'main'), snap => {
-    if (!snap.exists()) return;
-    const data = snap.data();
-    // only update if newer
-    if (data._updatedAt && data._updatedAt > (window._lastSaveAt || 0)) {
-      if (data.tasks)   { tasks = data.tasks; tasks.forEach(t=>{if(!t.subtasks)t.subtasks=[];if(!t.status)t.status='pending';}); nextId=Math.max(...tasks.map(t=>t.id),0)+1; save('m3_tasks',tasks); }
-      if (data.history) { save('m3_history', data.history); }
-      renderListAll();
-    }
-  }, err => console.warn('Snapshot error', err));
-}
-
-// ── Save to Firestore (debounced 1.5s) ──
-function saveToCloud() {
-  if (!currentUid) return;
-  setSyncStatus('syncing');
-  clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(async () => {
-    try {
-      const now = Date.now();
-      window._lastSaveAt = now;
-      await setDoc(doc(db, 'users', currentUid, 'data', 'main'), {
-        tasks: tasks,
-        history: loadHistory(),
-        _updatedAt: now,
-      });
-      setSyncStatus('synced');
-    } catch(e) {
-      console.error('Save to cloud failed', e);
-      setSyncStatus('idle');
-    }
-  }, 1500);
+  if (unsubSnap) { unsubSnap(); unsubSnap = null; }
+  fbAuth.signOut();
 }
 
 // ── Sync status UI ──
@@ -1846,26 +1762,102 @@ function setSyncStatus(status) {
   const dot = document.getElementById('syncDot');
   const txt = document.getElementById('syncTxt');
   if (!ind) return;
-  if (status === 'idle') { ind.style.display='none'; return; }
+  if (status === 'idle') { ind.style.display = 'none'; return; }
   ind.style.display = 'flex';
-  if (status === 'syncing') { dot.className='sync-dot syncing'; txt.textContent='同步中'; }
-  if (status === 'synced')  { dot.className='sync-dot synced';  txt.textContent='已同步';
-    setTimeout(()=>{ ind.style.display='none'; }, 2500); }
+  if (status === 'syncing') { dot.className = 'sync-dot syncing'; txt.textContent = '同步中'; }
+  if (status === 'synced')  { dot.className = 'sync-dot synced';  txt.textContent = '已同步';
+    setTimeout(() => { ind.style.display = 'none'; }, 2500); }
 }
 
-// ── Override save() to also sync to cloud ──
-const _origSave = save;
-window.save = function(k, v) {
-  _origSave(k, v);
-  if (k === 'm3_tasks' || k === 'm3_history') saveToCloud();
-};
-// also patch recordTodayToHistory
-const _origRecord = recordTodayToHistory;
-window.recordTodayToHistory = function() {
-  _origRecord();
-  saveToCloud();
+// ── Save to Firestore (debounced 1.5s) ──
+function saveToCloud() {
+  if (!currentUid) return;
+  setSyncStatus('syncing');
+  clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(() => {
+    const now = Date.now();
+    window._lastSaveAt = now;
+    fbDb.collection('users').doc(currentUid).collection('data').doc('main').set({
+      tasks:   tasks,
+      history: loadHistory(),
+      _updatedAt: now,
+    }).then(() => setSyncStatus('synced'))
+      .catch(e => { console.error('Cloud save failed', e); setSyncStatus('idle'); });
+  }, 1500);
+}
+
+// ── Load from Firestore ──
+function loadFromCloud() {
+  if (!currentUid) return;
+  setSyncStatus('syncing');
+  fbDb.collection('users').doc(currentUid).collection('data').doc('main').get()
+    .then(snap => {
+      if (snap.exists) {
+        const data = snap.data();
+        if (data.tasks) {
+          tasks = data.tasks;
+          tasks.forEach(t => { if (!t.subtasks) t.subtasks = []; if (!t.status) t.status = 'pending'; });
+          nextId = Math.max(...tasks.map(t => t.id), 0) + 1;
+          save('m3_tasks', tasks);
+        }
+        if (data.history) save('m3_history', data.history);
+      }
+      setSyncStatus('synced');
+      renderListAll();
+      renderDailyQuote();
+    })
+    .catch(e => { console.error('Cloud load failed', e); setSyncStatus('idle'); });
+}
+
+// ── Real-time listener ──
+function startCloudListener() {
+  if (!currentUid) return;
+  if (unsubSnap) unsubSnap();
+  unsubSnap = fbDb.collection('users').doc(currentUid).collection('data').doc('main')
+    .onSnapshot(snap => {
+      if (!snap.exists) return;
+      const data = snap.data();
+      if (data._updatedAt && data._updatedAt > (window._lastSaveAt || 0)) {
+        if (data.tasks) {
+          tasks = data.tasks;
+          tasks.forEach(t => { if (!t.subtasks) t.subtasks = []; if (!t.status) t.status = 'pending'; });
+          nextId = Math.max(...tasks.map(t => t.id), 0) + 1;
+          save('m3_tasks', tasks);
+        }
+        if (data.history) save('m3_history', data.history);
+        renderListAll();
+      }
+    }, err => console.warn('Snapshot error', err));
+}
+
+// ── Override save to also push to cloud ──
+const _localSave = save;
+save = function(k, v) {
+  _localSave(k, v);
+  if (currentUid && (k === 'm3_tasks' || k === 'm3_history')) saveToCloud();
 };
 
+// ── Auth state change ──
+fbAuth.onAuthStateChanged(user => {
+  if (user) {
+    currentUid = user.uid;
+    document.getElementById('authOverlay').classList.remove('on');
+    document.getElementById('userBar').style.display = 'flex';
+    const av = document.getElementById('userAvatar');
+    if (av) av.src = user.photoURL || '';
+    const un = document.getElementById('userName');
+    if (un) un.textContent = (user.displayName || user.email || '').split(' ')[0];
+    loadFromCloud();
+    startCloudListener();
+  } else {
+    currentUid = null;
+    if (unsubSnap) { unsubSnap(); unsubSnap = null; }
+    document.getElementById('authOverlay').classList.add('on');
+    document.getElementById('userBar').style.display = 'none';
+    setSyncStatus('idle');
+  }
+});
 </script>
+
 </body>
 </html>
